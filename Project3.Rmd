@@ -1,0 +1,422 @@
+EXPLORATORY DATA ANALYSIS by OLAF WIED
+========================================================
+The data set contains 4,898 white wines with 11 variables on quantifying the chemical properties of each wine. At least 3 wine experts rated the quality of each wine, providing a rating between 0 (very bad) and 10 (very excellent).
+
+Reference:
+P. Cortez, A. Cerdeira, F. Almeida, T. Matos and J. Reis. 
+Modeling wine preferences by data mining from physicochemical properties. In Decision Support Systems, Elsevier, 47(4):547-553, 2009.
+
+Input variables (based on physicochemical tests):
+
+1. fixed acidity (tartaric acid - g / dm^3)
+2. volatile acidity (acetic acid - g / dm^3)
+3. citric acid (g / dm^3)
+4. residual sugar (g / dm^3)
+5. chlorides (sodium chloride - g / dm^3
+6. free sulfur dioxide (mg / dm^3)
+7. total sulfur dioxide (mg / dm^3)
+8. density (g / cm^3)
+9. pH
+10. sulphates (potassium sulphate - g / dm^3)
+11. alcohol (% by volume)
+ 
+Output variable (based on sensory data): 
+ 
+12. quality (score between 0 and 10)
+ 
+ 
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+
+library(ggplot2)
+library(GGally)
+library(scales)
+library(reshape)
+library(tree)
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+wwq <- read.csv('wineQualityWhites.csv')
+```
+
+## Univariate Plots Section
+We use ggpairs on a subsample:
+
+```{r echo=FALSE, Univariate_Plots}
+set.seed(12345)
+wwq_s_ids <- sample(wwq$X,200)
+wwq_s <- subset(wwq, X %in% wwq_s_ids)
+ggpairs(data = wwq_s)
+
+#cw <- data.frame(cor(wwq[2:ncol(wwq)]))
+#cw$quality
+
+qplot(data = wwq, x = factor(quality))
+table(wwq$quality)
+
+ggplot(melt(wwq[2:ncol(wwq)]),aes(x = value)) + 
+    facet_wrap(~variable,scales = "free") + 
+    geom_histogram()
+
+qplot(data = wwq, x = alcohol)
+qplot(data=wwq, x=residual.sugar)
+qplot(data = wwq, x = chlorides, binwidth = 1/500)
+#1
+
+wwq$quality.joined <- cut(wwq$quality, c(0,4,7,10))
+
+
+#2
+
+high <- subset(wwq, wwq$quality >= 8)
+low <- subset(wwq,wwq$quality <= 4)
+highlow <- subset(wwq,wwq$quality > 7 | wwq$quality < 5)
+middle <- subset(wwq,wwq$quality <= 7 & wwq$quality >= 5)
+
+
+#summary(high)
+#summary(low)
+
+#3
+
+
+```
+
+
+## Univariate Analysis
+
+### What is the structure of your dataset? Did you create any new variables from existing variables in the dataset?
+
+We notice that vast majority of wines were assigned a rating between 5 and 7. There are no wines with ratings of 1, 2 or 10. It might be useful to combine the ratings and form 3 groups [3,4], [5,7] and [8,9]. We use "cut" to create a new variable "quality.joined".
+
+### What is/are the main feature(s) of interest in your dataset?
+
+We are interested in identifying the chemical properties of the white wines that could have influenced the quality rating. We will try to detect relationsships between the rating (variable "quality") and the variables describing the chemical properties. 
+
+From the pairwise plots we can get an overview of the data:
+
+- There is no clear (linear) relationsship between the wine quality and another variable.
+- There appear to be several outliers (on the upper scale).
+
+### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+
+There are a few obvious interpendencies between other variables (e.g. alcohol and density, residual.sugar and density). These might also help to eliminate outliers. 
+Further, (high) quality is not influenced by a single variable but rather a (optimal?) combination of chemical properties. 
+
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+
+Most histograms show very symmetric (Gaussian) behaviour with a few potential outliers. Alcohol and residual sugar are a little more skewed. Chlorides is also very symmetric and peaked around 0.04 but shows quite a few values above 0.1.
+
+For some variables, we probably want to delete some outliers. This will be investigated next.
+
+## Bivariate Plots Section
+```{r echo=FALSE, Bivariate_Plots1}
+ggplot(data = wwq, aes(x = residual.sugar, y = density)) + 
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = 'lm', color = 'red')
+ggplot(data = wwq, aes(x = alcohol, y = density)) + 
+  geom_point(alpha = 0.33)+
+  geom_smooth(method = 'lm', color = 'red')
+
+subset(wwq,wwq$density > 1.01)
+summary(wwq$residual.sugar)
+
+ggplot(data = wwq, aes(y = residual.sugar, x = alcohol)) +
+  geom_point(aes(size = density,color = density)) +
+  scale_colour_gradient(low = 'lightblue',high = 'darkblue') +
+  geom_smooth()
+
+```
+
+While the high density of 1.03898 is an outlier, it is plausible as it has an extremely high amount of residual sugar.
+
+However, with increasing resiudal sugar the influence of other variables should become weaker. We therefore discard the wine with the highest residual sugar.
+
+```{r echo=FALSE, Bivariate_Plots2}
+
+wwq <- subset(wwq,wwq$residual.sugar < 60)
+
+ggplot(data = wwq, aes(x = quality.joined, y = alcohol)) + 
+  geom_boxplot()
+
+```
+
+High quality wines tend to have higher percentages of alcohol.
+
+```{r echo=FALSE, Bivariate_Plots3}
+ggplot(data = wwq, aes(x = quality.joined, y = residual.sugar)) + 
+  geom_boxplot()
+
+ggplot(data = wwq,aes(x = residual.sugar, y = quality)) +
+  geom_point(position = 'jitter', alpha = 0.2) +
+  geom_smooth()
+```
+
+Residual sugar doesn't show a clear influence on wine quality. As with many other variables, a certain level of a chemical can result in very different quality ratings.
+
+Next, let's look at acidity. We expect low ratings for high values, as too much acidity leads to a vinegary taste.
+
+```{r echo=FALSE, Bivariate_Plots4}
+
+ggplot(data = wwq, aes(x = volatile.acidity, y = quality)) + 
+  geom_point(alpha = 0.2, position = 'jitter') +
+  scale_x_continuous(breaks = seq(0,max(wwq$volatile.acidity),0.1)) +
+  geom_smooth()
+
+```
+
+We see that for values up to 0.7, there is no clear influence on the wine quality. Ratings seem to decrease for values higher than 0.8. But there are only a few data points, so that we can be not sure about a true correlation. Nevertheless, it makes sense to break acidity into groups, especially because we can assume that hitting a certain high level (maybe not reached in the dataset) will eventually have a bad influence on the wine quality:
+
+```{r echo=FALSE, Bivariate_Plots5}
+wwq$acidity.joined <- cut(wwq$volatile.acidity,c(0,0.7,1.11))
+
+ggplot(data = wwq, aes(x = acidity.joined, y = quality)) + 
+  geom_boxplot()
+
+print("Next, we investigate the second acidity variable:")
+
+ggplot(data = wwq, aes(x = fixed.acidity, y = quality)) + 
+  geom_point(alpha = 0.2, position = 'jitter') +
+  scale_x_continuous(breaks = seq(0,max(wwq$fixed.acidity),1)) +
+  geom_smooth(method = 'lm', color = 'red') +
+  geom_smooth()
+print("We delete the data point with the highest fixed acidity because it is the only wine with a acidity in this range.")
+wwq <- subset(wwq, wwq$fixed.acidity < 14)
+
+print("One more variable about acidity: citrc acidity")
+
+ggplot(data = wwq, aes(x = citric.acid, y = quality)) + 
+  geom_point(alpha = 0.2, position = 'jitter') +
+  scale_x_continuous(breaks = seq(0,max(wwq$citric.acid),0.1)) +
+  geom_smooth()
+
+ggplot(data = wwq, aes(y = citric.acid, x = quality.joined)) + 
+  geom_boxplot()
+```
+
+The investigation shows an overlap in quality for different levels of citric acidity. High quality seems to be associated with a smaller range of citric acidity. 
+
+Now, we turn our attention to chlorides and sulphates:
+
+```{r echo=FALSE, Bivariate_Plots6}
+ggplot(data = wwq, aes(x = chlorides, y = quality)) + 
+  geom_point(alpha = 0.2, position = 'jitter') +
+  scale_x_continuous(breaks = seq(0,max(wwq$chlorides),0.025)) +
+  geom_smooth()
+
+by(wwq$chlorides,wwq$quality.joined,summary)
+subset(high,high$chlorides > 0.1)
+
+wwq$chlorides.joined <- cut(wwq$chlorides,c(0,0.03,0.044,0.121,0.346))
+
+ggplot(data = wwq, aes(x = sulphates, y = quality)) + 
+  geom_point(alpha = 0.2, position = 'jitter') +
+  geom_smooth()
+```
+
+No apparent findings on sulphates. 
+Next, sulfur dioxide:
+
+```{r echo=FALSE, Bivariate_Plots7}
+ggplot(data = wwq, aes(x = total.sulfur.dioxide, y = quality)) + 
+  geom_point(alpha = 0.2, position = 'jitter') +
+  geom_smooth()
+
+wwq$sulfur.transform <- (wwq$total.sulfur.dioxide - mean(wwq$total.sulfur.dioxide))^2
+
+ggplot(data = wwq, aes(y = quality, x = sulfur.transform))+
+  geom_point(position = 'jitter', alpha = 0.2) +
+  geom_smooth() +
+  xlim(0,20000)
+
+ggplot(data = wwq, aes(y = sulfur.transform, x = quality.joined)) + 
+  geom_boxplot() +
+  scale_y_log10()
+
+```
+
+## Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+
+Wine quality doesn't seem to vary in any simple way with one of the variables describing a specific chemical attribute. For most plots, we notice that low quality wines show a wider range (containing the smaller range of high quality wines) of values. While it might be hard to determine what makes a high quality wine, this could help determine when a chemical property becomes so extreme thatresults in a bad taste. (Best example would be acidity.)  In some cases, we might be able to construct a weak linear relationship by transforming a variable, see sulfur above.
+
+### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
+
+We used the physical (nearly linear) relationsship between alcohol/sugar content and density to determine extreme values.
+
+### What was the strongest relationship you found?
+
+The strongest (and also most obvious) relationship is the one between residual sugar and density. Also, alcohol and density are strongly correlated, even though residual sugar has the stronger influence (as "adding" alcohol can only lower to density to density of alcohol itself).
+
+Relationsships between chemicals and wine quality are rather weak.
+
+
+## Multivariate Plots Section
+
+The first plot is similar to the one above (after eliminating the outlier).
+
+```{r echo=FALSE, Multivariate_Plots1}
+ggplot(data = wwq, aes(y = residual.sugar, x = alcohol)) +
+  geom_point(aes(size = density,color = density)) +
+  scale_colour_gradient(low = 'lightblue',high = 'darkblue') 
+
+ggplot(data = wwq, aes(x =fixed.acidity,y=volatile.acidity)) +
+  geom_point(aes(color = quality.joined), alpha = 0.2, position = 'jitter') +
+  scale_colour_manual(values=c("red", "yellow", "blue")) + 
+  geom_smooth(data = high) +
+  geom_smooth(data = low, color = 'red') +
+  geom_smooth(data = middle, color = 'yellow')
+  
+
+```
+
+The scatter plot of fixed and volatile acidity supports our hypothesis that too high values of acidity (for at least one of the variables) might be correlated with lower scores (red).
+
+```{r echo=FALSE, Multivariate_Plots2}
+
+ggplot(data = wwq, aes(x = residual.sugar, y = alcohol)) +
+  geom_point(aes( size = volatile.acidity, color = chlorides.joined),  alpha = 0.5) +
+  scale_colour_manual(values=c("blue", "yellow","red","green"))+
+  facet_wrap(~quality.joined)+
+  scale_x_log10()
+
+ggplot(data = wwq, aes(x = fixed.acidity, y = volatile.acidity)) +
+  geom_point(aes(color = residual.sugar),  position = 'jitter') +
+  facet_wrap(~quality.joined) +
+  scale_y_log10()
+
+
+
+```
+
+We create two new variables:
+
+- acidity.total: volatile.acidity * fixed.acidity
+- sulfur.citrc: free.sulfur.dioxide * citric.acid (antioxidants and "freshness")
+
+```{r echo=FALSE, Multivariate_Plots3}
+wwq$acidity.total <- wwq$volatile.acidity*wwq$fixed.acidity
+
+wwq$sulfur.citric <- wwq$free.sulfur.dioxide*wwq$citric.acid
+
+ggplot(data = wwq,aes(x = sulfur.citric, y = acidity.total)) +
+  geom_point(position = 'jitter', alpha = 0.33, aes(color = alcohol)) +
+  facet_wrap(~quality.joined) +
+  scale_x_log10()+
+  scale_y_log10()
+
+ggplot(data = wwq,aes(y = sulfur.citric, x=factor(quality), fill = factor(quality))) +
+  geom_boxplot()
+
+
+treefit <- tree(data = wwq, 
+                factor(quality) ~ residual.sugar + sulphates + chlorides + volatile.acidity + fixed.acidity + citric.acid + pH + density + free.sulfur.dioxide + total.sulfur.dioxide + alcohol+sulfur.citric)
+
+plot(treefit)
+text(treefit)
+
+ggplot(data = wwq,aes(x = alcohol, y = volatile.acidity)) +
+  geom_point(position = 'jitter', alpha = 0.33, aes(size= quality, color = quality)) +
+  geom_vline(xintercept = 10.85)+
+  geom_hline(yintercept = 0.2525)+
+  annotate("text", label = "alcohol < 10.85 & v acidity > 0.2525", x = 9.25, y = 0.75)+
+  annotate("text", label = "=> quality -> 5", x = 9.25, y = 0.65)
+
+```
+
+## Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+
+In general, there are no clear correlations between wine quality and its chemical properties. Our visualizations suggest that only extreme values (e.g. for acidity) may influence the rating in a negative way. The dataset is problematic as most wines are assigned a moderate rating and not much can be inferred about low or high ratings (high ratings, of course, are of particular interest). 
+
+### Were there any interesting or surprising interactions between features?
+
+No. Strong relationsships can only be found among chemical attributes (e.g. density and residual sugar). No surprises here.
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the strengths and limitations of your model.
+
+We created a simple tree model. However, relationsships are so weak that the model only makes use of two variables (alcohol and volatile acidity) and only assigns ratings of either 5 or 6.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+qplot(data = wwq, x = factor(quality), fill = quality.joined) +
+  ggtitle("Histogram of White Wine Ratings") +
+  xlab("Quality (0: Worst to 10: Best)") +
+  ylab("Number of Counts")+
+  scale_y_discrete(breaks = seq(0,2300,100))
+```
+
+### Description One
+
+Most white wines obtain a rating between 5 and 7. Only very few ratings of 3 and 4 or 8 and 9 are assigned. There are no ratings less than 3 and no wine is rated 10. As most wines are of medium quality, it will be hard to determine what chemical properties are related are typical of high quality wines (if possible in the first place).
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+ggplot(data = wwq,aes(x = alcohol, y = volatile.acidity)) +
+  geom_point(position = 'jitter', alpha = 0.33, aes(size= quality, color = quality)) +
+  geom_segment(aes(x=10.85,y=0.2525,xend=10.85,yend=max(volatile.acidity)+0.05))+
+  geom_segment(aes(xend=10.85,yend=0.2525,y=0.2525,x=0))+
+  scale_x_log10(breaks = seq(min(wwq$alcohol),max(wwq$alcohol),1))+
+  annotate("text", label = "alcohol < 10.85 & volatile acidity > 0.2525", size = 3, x = 9.25, y = 0.75)+
+  annotate("text", label = "=> quality -> 5", size = 3, x = 9.25, y = 0.65)+
+  annotate("text", label = "quality -> 6", size =3, x = 12.5, y = 0.75)+
+  ggtitle("Visualization of the Regression Tree Model")
+
+```
+
+### Description Two
+
+The regression tree model results in a very simplistic structure with only two distinctions:
+If the alcohol level is below 10.85% and the volatile acidity is higher than 0.2525 g/dm^3 the wine will be assigned a rating of 5 (upper left area). In all other cases its rating will be 6. We added color and let size of the dots increase with quality. It seems like the wines in the upper left rectangle are (on average) of higher quality than the ones outside the recatangle. In fact, the tree method gives a mean of 5.361 for the wines in the upper left are and a mean of 6.131 elsewhere. Nevertheless, a very disappointing result. In general, no strong relationsships between wine quality and its chemical properties could be found.
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+wwq$alcohol.less_10.85 <- (wwq$alcohol < 10.85)
+levels(wwq$quality.joined) <- c("(Low) Quality 3-4","Quality 5-7", "(High) Quality 8-9")
+
+ggplot(data = wwq,aes(x = sulfur.citric, y = acidity.total)) +
+  geom_point(position = 'jitter', alpha = 0.33, aes(color = alcohol.less_10.85)) +
+  scale_colour_discrete(name = "Alcohol (in%)", labels = c(">= 10.85","< 10.85"))+
+  facet_wrap(~quality.joined) +
+  scale_x_log10()+
+  xlab("Free sulfur dioxide * citric acidity (on log scale)")+
+  ylab("Fixed * volatile acidity") +
+  ggtitle("Quality depending on freshness, acidity and alcohol content")
+```
+
+### Description Three
+
+We combine several variables to visualize to get a more complete view of the data: On the x-axis we multiply the level of sulfur dioxide (an antioxidant) with the amount of citric acid (normalized per dm^3) as meausre of freshness. On the y-axis we multiply fixed and volatile acidity levels, which in high doses can lead to a vinegary taste. Further, we use our results from the tree regression models which suggests discriminating wine quality based on the alcohol content. The color distinction shows that high quality wines (the right facet) are more often found alcohol levels over 10.85%. The opposite holds for wine of quality 3 or 4. Also, high quality is more often found with high "freshness" (keep in mind the log scale on the x-axis). Most wines experience low "acidity" levels. However, higher levels are more often found for medium or low quality wines.
+
+------
+
+# Reflection
+
+The dataset contains almost 5000 white wines that were rated by three experts. Eleven chemical attributes like sulfur content, pH level etc. are listed. 
+
+Only weak relationships between the quality and the chemcial attributes could be found. This is little surprising because we can hardly expect to model (the only little understood and very complex sense) human taste with only eleven variables. Some variables are strongly correlated (e.g. density and alcohol content or amount of residual sugar). A tree regression model was applied but could only provide little inside. One problem might be that most wines are of medium quality (with ratings between 5 and 7). The dataset contains only few wines with ratings of 8 and 9. This makes it hard to make inferences about high quality wines. Also, combinations of variables could only slightly improve the situation. 
+What we can say is the rather trivial fact that certain chemicals in very high doses (e.g. volatile acidity) are likely to have negative influence on the taste. If a wine shows only moderate chemical attribute, nothing can be said about its potential rating.
+As guideline, our visualizations showed the following:
+
+- High alcohol content ( 10% or higher) 
+- Low or medium acidity levels
+- Low or medium residual sugar content
+- Citric acid levels not too close to zero
+
+might be more likely associated with high ratings, however, these are far from being sufficient criteria.
+
+For a better understanding of wine quality more chemical properties are needed.
+
